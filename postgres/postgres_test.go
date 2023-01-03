@@ -28,7 +28,7 @@ type PostgresTestSuite struct {
 }
 
 func (ts *PostgresTestSuite) SetupSuite() {
-	db, err := sql.Open("pgx", "postgres://sked@localhost:5432/sked?sslmode=disable")
+	db, err := sql.Open("pgx", "postgres://sked:sked@localhost:5432/sked?sslmode=disable")
 	if err != nil {
 		panic(err)
 	}

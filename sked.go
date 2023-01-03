@@ -154,16 +154,15 @@ func (s Sked[T]) runRefresh() {
 
 func (s Sked[T]) schedule(id string, schedTime time.Time, msg Message[T]) {
 	go func() {
-		time.Sleep(schedTime.Sub(time.Now()))
 		select {
 		case <-s.ctx.Done():
 			return
-		default:
-		}
-		s.msgs <- msg
-		err := s.store.Delete(s.ctx, id)
-		if err != nil {
-			s.sendErr(err)
+		case <-time.After(schedTime.Sub(time.Now())):
+			s.msgs <- msg
+			err := s.store.Delete(s.ctx, id)
+			if err != nil {
+				s.sendErr(err)
+			}
 		}
 	}()
 }

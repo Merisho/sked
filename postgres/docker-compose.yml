@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+    postgres:
+        image: postgres
+        container_name: sked-pg-test
+        restart: always
+        environment:
+          - POSTGRES_USER=sked
+          - POSTGRES_PASSWORD=sked
+          - POSTGRES_DB=sked
+        ports:
+        - "5432:5432"
