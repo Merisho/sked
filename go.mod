@@ -1,4 +1,4 @@
-module sked
+module github.com/merisho/sked
 
 go 1.18
 

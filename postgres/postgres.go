@@ -4,15 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
-	"sked"
-)
-
-var (
-	ErrCaptureTimeThresholdGreaterThanLockDuration = errors.New("capture time threshold must be less than lock duration as compared to current time")
+	"github.com/merisho/sked"
 )
 
 var _ sked.Store = (*Store)(nil)
@@ -46,14 +41,14 @@ func (s *Store) Bootstrap(ctx context.Context) error {
 	schedule_time TIMESTAMP NOT NULL,
 	scheduled_at TIMESTAMP NOT NULL,
 	lock_id UUID,
-	locked_at TIMESTAMP
+    lock_deadline TIMESTAMP
 )`, s.tableName)
 	_, err := s.db.ExecContext(ctx, q)
 	if err != nil {
 		return err
 	}
 
-	q = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s_schedule_time_idx ON %s (schedule_time)`, s.tableName, s.tableName)
+	q = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s_schedule_time_idx ON %s USING BRIN (schedule_time, lock_deadline)`, s.tableName, s.tableName)
 	_, err = s.db.ExecContext(ctx, q)
 	if err != nil {
 		return err
@@ -81,23 +76,20 @@ func (s *Store) Put(ctx context.Context, msg sked.SavedMessage) (string, error) 
 }
 
 func (s *Store) Capture(ctx context.Context, messages []sked.SavedMessage, beforeThisTime time.Time) (n int, lockID string, err error) {
-	if beforeThisTime.Sub(time.Now().UTC()) > s.conf.LockDuration {
-		return 0, "", ErrCaptureTimeThresholdGreaterThanLockDuration
-	}
-
 	limit := len(messages)
 
-	q := fmt.Sprintf(`UPDATE %s SET lock_id=gen_random_uuid(), locked_at=NOW()
+	q := fmt.Sprintf(`UPDATE %s SET lock_id=gen_random_uuid(), lock_deadline=schedule_time+$1
 								WHERE id IN (
-									SELECT id FROM %s WHERE schedule_time<=$1 AND (lock_id IS NULL OR locked_at <= $2)
+									SELECT id FROM %s WHERE lock_deadline < NOW() OR (schedule_time<=$2 AND lock_id IS NULL)
 									FOR UPDATE SKIP LOCKED LIMIT $3
 								) RETURNING id, payload, schedule_time, scheduled_at, lock_id`, s.tableName, s.tableName)
-	lockExpirationTime := time.Now().UTC().Add(-s.conf.LockDuration)
-	res, err := s.db.QueryContext(ctx, q, beforeThisTime, lockExpirationTime, limit)
+	res, err := s.db.QueryContext(ctx, q, s.conf.LockDuration, beforeThisTime, limit)
 	if err != nil {
 		return 0, "", err
 	}
-	defer res.Close()
+	defer func() {
+		_ = res.Close()
+	}()
 
 	for res.Next() && n < limit {
 		var msg sked.SavedMessage

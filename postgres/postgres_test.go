@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"sked"
+	"github.com/merisho/sked"
 
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -146,7 +146,7 @@ func (ts *PostgresTestSuite) TestCapture_MustRecaptureWithExpiredLock() {
 
 	msg1 := messages[0]
 
-	q := fmt.Sprintf("UPDATE %s SET locked_at=$1 WHERE id=$2", tableName)
+	q := fmt.Sprintf("UPDATE %s SET lock_deadline=$1 WHERE id=$2", tableName)
 	_, err = ts.db.ExecContext(ctx, q, now().Add(-time.Hour), msg1.ID)
 	ts.Require().NoError(err)
 
@@ -155,28 +155,6 @@ func (ts *PostgresTestSuite) TestCapture_MustRecaptureWithExpiredLock() {
 	ts.Require().Equal(1, n)
 	ts.Require().Equal(msg1.ID, messages[0].ID)
 	ts.Require().NotEqual(lockID1, lockID2)
-}
-
-func (ts *PostgresTestSuite) TestCapture_MustReturnErrorIfCapturingFutureMessagesThatWillHaveLockExpired() {
-	ctx := context.Background()
-	tableName := ts.testTableName()
-	pg := NewStore(ts.db, tableName, Config{
-		LockDuration: time.Minute,
-	})
-	err := pg.Bootstrap(ctx)
-	ts.Require().NoError(err)
-
-	_, err = pg.Put(ctx, sked.SavedMessage{
-		Payload:      "test 1",
-		ScheduleTime: now().Add(time.Hour),
-		ScheduledAt:  now(),
-	})
-	ts.Require().NoError(err)
-
-	messages := make([]sked.SavedMessage, 1)
-	n, _, err := pg.Capture(ctx, messages, now().Add(time.Hour))
-	ts.Require().Equal(ErrCaptureTimeThresholdGreaterThanLockDuration, err)
-	ts.Require().Zero(n)
 }
 
 func (ts *PostgresTestSuite) testTableName() string {
